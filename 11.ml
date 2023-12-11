@@ -5,54 +5,62 @@ let rec read_lines ic =
   with End_of_file ->
     []
 
+let rec find_galaxies x y rows =
+  match rows with
+  | row :: t ->
+    if x = String.length row then
+      find_galaxies 0 (succ y) t
+    else if String.unsafe_get row x = '#' then
+      (x, y) :: find_galaxies (succ x) y rows
+    else
+      find_galaxies (succ x) y rows
+  | [] -> []
+
+let rec measure_distances galaxies compare accum =
+  match galaxies with
+  | g :: gs -> begin
+    let (x1, y1) = g in
+    let (x2, y2) = compare in
+    let dist = (abs (x1 - x2)) + (abs (y1 - y2)) in
+    measure_distances gs compare (dist + accum)
+  end
+  | [] -> accum
+
+let rec sum_distances galaxies accum =
+  match galaxies with
+  | g :: gs -> begin
+    let dists = measure_distances gs g 0 in
+    sum_distances gs (dists + accum)
+  end
+  | [] -> accum
+
+let rec create_expansion i accum result empty size =
+  if i < Array.length result then begin
+    let accum = if empty.(i) then accum + size else accum in
+    result.(i) <- accum;
+    create_expansion (i + 1) accum result empty size
+  end
+
 let find_sums lines expansion_size =
   let w = String.length (List.hd lines) in
   let h = List.length lines in
-  let empty_cols = Hashtbl.create w in
-  let empty_rows = Hashtbl.create h in
-  let galaxies = ref [] in
-  (* mark all rows and cols as empty first *)
-  for i = 0 to w - 1 do
-    Hashtbl.add empty_cols i ();
-  done;
-  for i = 0 to h - 1 do
-    Hashtbl.add empty_rows i ();
-  done;
-  (* iterate to find galaxies *)
-  let iter_rows y row =
-    let iter_cols x g =
-      if g = '#' then begin
-        Hashtbl.remove empty_cols x;
-        Hashtbl.remove empty_rows y;
-        galaxies := (x, y) :: !galaxies
-      end in
-    String.iteri iter_cols row in
-  List.iteri iter_rows lines;
-  (* perform expansion *)
+  (* Find the galaxies. *)
+  let galaxies = find_galaxies 0 0 lines in
+  (* Iterate to mark rows and columns as not empty. *)
+  let empty_cols = Array.make w true in
+  let empty_rows = Array.make h true in
+  let iter_galaxies (x, y) =
+    empty_cols.(x) <- false;
+    empty_rows.(y) <- false in
+  List.iter iter_galaxies galaxies;
+  (* Perform expansion. *)
   let xarr = Array.make w 0 in
+  create_expansion 0 0 xarr empty_cols expansion_size;
   let yarr = Array.make h 0 in
-  let acc = ref 0 in
-  for i = 0 to w - 1 do
-    if Option.is_some (Hashtbl.find_opt empty_cols i) then
-      acc := !acc + expansion_size;
-    xarr.(i) <- !acc
-  done;
-  let acc = ref 0 in
-  for i = 0 to h - 1 do
-    if Option.is_some (Hashtbl.find_opt empty_rows i) then
-      acc := !acc + expansion_size;
-    yarr.(i) <- !acc
-  done;
+  create_expansion 0 0 yarr empty_rows expansion_size;
   let expand (x, y) = ((x + xarr.(x)), (y + yarr.(y))) in
-  let galaxies = List.map expand !galaxies in
-  let sum = ref 0 in
-  let iter1 i (x1, y1) =
-    let iter2 j (x2, y2) =
-      if i < j then
-        sum := !sum + (abs (x1 - x2)) + (abs (y1 - y2)) in
-    List.iteri iter2 galaxies in
-  List.iteri iter1 galaxies;
-  !sum
+  (* Sum the distances. *)
+  sum_distances (List.map expand galaxies) 0
 
 let () =
   let ic = open_in "input" in
