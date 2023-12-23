@@ -157,19 +157,23 @@ let trim_graph goal graph =
   Hashtbl.remove graph (sx, sy);
   Hashtbl.remove graph (ex, ey);
   Hashtbl.iter iterator graph;
-  let final_graph = Hashtbl.create 128 in
   let ids = Hashtbl.create 128 in
+  let alt = Hashtbl.create 128 in
   Hashtbl.add ids goal 0;
+  Hashtbl.add alt 0 goal;
   Hashtbl.add ids (1, 0) 1;
+  Hashtbl.add alt 1 (1, 0);
   let iterator k v =
-    if Option.is_none (Hashtbl.find_opt ids k) then
-      Hashtbl.add ids k (Hashtbl.length ids) in
+    if Option.is_none (Hashtbl.find_opt ids k) then begin
+      let l = (Hashtbl.length ids) in
+      Hashtbl.add ids k l;
+      Hashtbl.add alt l k
+    end in
   Hashtbl.iter iterator graph;
-  let iterator k v =
-    let neighbors = List.map (fun (x, y, w) -> (Hashtbl.find ids (x, y)), w) !v in
-    Hashtbl.add final_graph (Hashtbl.find ids k) neighbors in
-  Hashtbl.iter iterator graph;
-  final_graph
+  Array.init (Hashtbl.length ids) (fun i ->
+    let neighbors = Hashtbl.find graph (Hashtbl.find alt i) in
+    List.map (fun (x, y, w) -> (Hashtbl.find ids (x, y)), w) !neighbors
+    )
 
 let create_graph grid =
   let graph = Hashtbl.create 4096 in
@@ -181,10 +185,10 @@ let rec traverse_graph seen graph weight pos =
   if pos = 0 then
     Some weight
   else begin
-    Hashtbl.replace seen pos ();
+    let seen = Int64.logor seen (Int64.shift_left 1L pos) in
     let neighbors = List.filter
-      (fun (p, _) -> Option.is_none (Hashtbl.find_opt seen p))
-      (Hashtbl.find graph pos)
+      (fun (p, _) -> (Int64.logand seen (Int64.shift_left 1L p)) = 0L)
+      (graph.(pos))
       in
     match (search_graph_neighbors seen graph neighbors) with
     | Some v -> Some (weight + v)
@@ -193,8 +197,7 @@ let rec traverse_graph seen graph weight pos =
 and search_graph_neighbors seen graph neighbors =
   match neighbors with
   | (a, w) :: b :: t ->
-    let copy = Hashtbl.copy seen in
-    let accuma = traverse_graph copy graph w a in
+    let accuma = traverse_graph seen graph w a in
     let accumb = search_graph_neighbors seen graph (b :: t) in
     begin
       match accuma, accumb with
@@ -215,8 +218,7 @@ let part_1 grid =
 
 let part_2 grid =
   let graph = create_graph grid in
-  let seen = Hashtbl.create 128 in
-  let result = traverse_graph seen graph 0 1 in
+  let result = traverse_graph 0L graph 0 1 in
   print_int (Option.get result);
   print_endline ""
 
