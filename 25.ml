@@ -1,10 +1,3 @@
-(* find this by using graphviz neato *)
-let found_pairs = [
-  (1198, 229);
-  (1207, 485);
-  (1336, 156);
-]
-
 let add_edge graph a b =
   let edges =
     match Hashtbl.find_opt graph a with
@@ -40,62 +33,61 @@ let optimize_graph graph =
     |> List.map (Hashtbl.find ids) in
   Array.init (Hashtbl.length ids) init
 
-let draw_graph graph =
-  let oc = open_out "graph.dot" in
-  output_string oc "graph {\n";
-  let iterator i n =
-    let iterator2 m = 
-      if i < m then
-        Printf.fprintf oc "    \"%d\" -- \"%d\"\n" i m in
-    List.iter iterator2 n in
+let get_edges graph =
+  let result = ref [] in
+  let iterator i v =
+    let iterator2 j =
+      if i < j then
+        result := (i, j) :: !result in
+    List.iter iterator2 v in
   Array.iteri iterator graph;
-  output_string oc "}\n";
-  flush oc;
-  close_out oc
+  Array.of_list !result
 
-let rec list_remove a xs =
-  match xs with
-  | x :: xs ->
-    if x = a then xs else x :: list_remove a xs
-  | [] -> []
+let swap_remove array num_edges i =
+  array.(i) <- array.(!num_edges - 1);
+  num_edges := !num_edges - 1
 
-let rec remove_pairs graph pairs =
-  match pairs with
-  | (a, b) :: pairs ->
-    graph.(a) <- list_remove b graph.(a);
-    graph.(b) <- list_remove a graph.(b);
-    remove_pairs graph pairs
-  | [] -> ()
+let contract graph =
+  let running = ref true in
+  let result = ref 0 in
+  let orig_edges = get_edges graph in
+  while !running do
+    let num_vertices = ref (Array.length graph) in
+    let vertex_weights = Array.make !num_vertices 1 in
+    let edges = Array.copy orig_edges in
+    let num_edges = ref (Array.length edges) in
 
-let rec find_first_reachable i seen =
-  if i = Array.length seen then
-    None
-  else if not seen.(i) then
-    Some i
-  else find_first_reachable (i + 1) seen
-
-let rec find_disjoint_size_rec grapn seen node =
-  if seen.(node) then
-    0
-  else begin
-    seen.(node) <- true;
-    grapn.(node)
-      |> List.filter (fun i -> not seen.(i))
-      |> List.map (find_disjoint_size_rec grapn seen)
-      |> List.fold_left (+) 0
-      |> succ
-  end
-  
-
-let find_disjoint_size graph seen =
-  let start = find_first_reachable 0 seen |> Option.get in
-  find_disjoint_size_rec graph seen start
-
-let solve_graph graph =
-  let seen = Array.make (Array.length graph) false in
-  let a = find_disjoint_size graph seen in
-  let b = find_disjoint_size graph seen in
-  print_int (a * b);
+    while !num_vertices > 2 do
+      let edge_index = Random.int !num_edges in
+      let edge = edges.(edge_index) in
+      swap_remove edges num_edges edge_index;
+      (* anything that points to second element should now point to first element *)
+      (* TODO speed up by not going through every edge here? *)
+      let a, b = edge in
+      vertex_weights.(a) <- vertex_weights.(a) + vertex_weights.(b);
+      let i = ref 0 in
+      while !i < !num_edges do
+        let c, d = edges.(!i) in
+        let c = if c = b then a else c in
+        let d = if d = b then a else d in
+        if c = d then begin
+          swap_remove edges num_edges !i;
+        end else begin
+          edges.(!i) <- (c, d);
+          i := !i + 1;
+        end;
+      done;
+      num_vertices := !num_vertices - 1;
+    done;
+    if !num_edges = 3 then begin
+      running := false;
+      let a, b = edges.(0) in
+      let a = vertex_weights.(a) in
+      let b = vertex_weights.(b) in
+      result := a * b;
+    end
+  done;
+  print_int !result;
   print_endline ""
 
 let () =
@@ -104,6 +96,5 @@ let () =
   read_lines ic graph;
   close_in ic;
   let graph = optimize_graph graph in
-  remove_pairs graph found_pairs;
-  solve_graph graph
-  (* draw_graph graph *)
+  contract graph
+
